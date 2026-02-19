@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Website RAG Chatbot — Scrape any website and ask questions about its content using AI-powered retrieval.">
+    <title>WebRAG — AI-Powered Website Q&A</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- ========= HEADER ========= -->
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <h1>WebRAG</h1>
+            </div>
+            <div class="header-badge" id="indexBadge" title="Index status">
+                <span class="badge-dot"></span>
+                <span id="badgeText">No data</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- ========= SIDEBAR — URL Ingestion ========= -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-card glass">
+                <h2>🌐 Ingest Website</h2>
+                <p class="hint">Paste a URL to recursively scrape and index its content for Q&A.</p>
+
+                <label for="urlInput">Website URL</label>
+                <input type="url" id="urlInput" placeholder="https://example.com" autocomplete="url">
+
+                <div class="param-row">
+                    <div class="param">
+                        <label for="maxDepth">Depth</label>
+                        <input type="number" id="maxDepth" value="2" min="0" max="5">
+                    </div>
+                    <div class="param">
+                        <label for="maxPages">Max Pages</label>
+                        <input type="number" id="maxPages" value="50" min="1" max="200">
+                    </div>
+                </div>
+
+                <button id="scrapeBtn" class="btn-primary">
+                    <span class="btn-text">Scrape & Index</span>
+                    <span class="btn-loader" hidden>
+                        <span class="spinner"></span> Scraping…
+                    </span>
+                </button>
+
+                <div class="progress-area" id="progressArea" hidden>
+                    <div class="progress-bar-track">
+                        <div class="progress-bar-fill" id="progressFill"></div>
+                    </div>
+                    <p class="progress-msg" id="progressMsg">Starting…</p>
+                </div>
+            </div>
+
+            <div class="sidebar-card glass stats-card" id="statsCard" hidden>
+                <h3>📊 Index Stats</h3>
+                <div class="stat-row">
+                    <span>Documents</span><strong id="statDocs">0</strong>
+                </div>
+                <div class="stat-row">
+                    <span>Chunks</span><strong id="statChunks">0</strong>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ========= CHAT AREA ========= -->
+        <section class="chat-section">
+            <div class="chat-messages" id="chatMessages">
+                <div class="welcome-msg">
+                    <div class="welcome-icon">🤖</div>
+                    <h2>Welcome to WebRAG</h2>
+                    <p>Scrape a website using the panel on the left, then ask me anything about its content.</p>
+                </div>
+            </div>
+
+            <form class="chat-input-bar" id="chatForm">
+                <input type="text" id="chatInput" placeholder="Ask a question about the scraped content…" autocomplete="off" disabled>
+                <button type="submit" id="sendBtn" class="btn-send" disabled title="Send">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                </button>
+            </form>
+        </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
