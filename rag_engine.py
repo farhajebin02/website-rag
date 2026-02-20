@@ -1,5 +1,5 @@
 """
-RAG Engine — Text chunking, FAISS vector indexing, and Gemini-powered QA.
+RAG Engine — Text chunking, FAISS vector indexing, and Groq-powered QA.
 """
 
 import logging
@@ -21,9 +21,9 @@ except ImportError:
     SentenceTransformer = None
 
 try:
-    import google.generativeai as genai
+    from groq import Groq
 except ImportError:
-    genai = None
+    Groq = None
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +128,9 @@ class RAGEngine:
     """
 
     EMBED_MODEL_NAME = "all-MiniLM-L6-v2"
-    GEMINI_MODEL_NAME = "gemini-2.0-flash"
+    GROQ_MODEL_NAME = "llama-3.3-70b-versatile"
 
-    def __init__(self, gemini_api_key: Optional[str] = None):
+    def __init__(self, groq_api_key: Optional[str] = None):
         # Embedding model (lazy-loaded)
         self._embed_model: Optional[SentenceTransformer] = None
         self._embed_dim: int = 384  # MiniLM-L6 output dim
@@ -139,9 +139,9 @@ class RAGEngine:
         self.index: Optional[faiss.Index] = None
         self.chunks: List[Chunk] = []
 
-        # Gemini
-        self._gemini_key = gemini_api_key or os.getenv("GEMINI_API_KEY", "")
-        self._gemini_model = None
+        # Groq
+        self._groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
+        self._groq_client = None
 
         # Splitter
         self.splitter = RecursiveTextSplitter(chunk_size=500, chunk_overlap=50)
@@ -175,11 +175,10 @@ class RAGEngine:
             self._embed_dim = self._embed_model.get_sentence_embedding_dimension()
             logger.info("Embedding model loaded (dim=%d).", self._embed_dim)
 
-    def _load_gemini(self):
-        if self._gemini_model is None and genai and self._gemini_key:
-            genai.configure(api_key=self._gemini_key)
-            self._gemini_model = genai.GenerativeModel(self.GEMINI_MODEL_NAME)
-            logger.info("Gemini model configured: %s", self.GEMINI_MODEL_NAME)
+    def _load_groq(self):
+        if self._groq_client is None and Groq and self._groq_key:
+            self._groq_client = Groq(api_key=self._groq_key)
+            logger.info("Groq client configured: %s", self.GROQ_MODEL_NAME)
 
     # ------------------------------------------------------------------
     # Ingestion
@@ -259,7 +258,7 @@ class RAGEngine:
         """
         Full RAG pipeline: retrieve context → generate answer with Gemini.
         """
-        self._load_gemini()
+        self._load_groq()
 
         retrieved = self.retrieve(question, top_k=top_k)
         if not retrieved:
@@ -292,13 +291,18 @@ class RAGEngine:
             "### Answer\n"
         )
 
-        # Call Gemini
-        if self._gemini_model:
+        # Call Groq
+        if self._groq_client:
             try:
-                response = self._gemini_model.generate_content(prompt)
-                answer = response.text
+                response = self._groq_client.chat.completions.create(
+                    model=self.GROQ_MODEL_NAME,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=1024,
+                )
+                answer = response.choices[0].message.content
             except Exception as exc:
-                logger.error("Gemini generation failed: %s", exc)
+                logger.error("Groq generation failed: %s", exc)
                 answer = f"Error generating answer: {exc}"
         else:
             # Fallback: no LLM available, return raw context

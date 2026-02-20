@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Global state
-rag_engine = RAGEngine(gemini_api_key=os.getenv("GEMINI_API_KEY"))
+rag_engine = RAGEngine(groq_api_key=os.getenv("GROQ_API_KEY"))
 scrape_status = {
     "active": False,
     "progress": 0,
@@ -115,11 +115,11 @@ def api_scrape():
                     "active": False,
                     "done": True,
                     "message": (
-                        f"Done! Indexed {stats['chunks']} chunks "
-                        f"from {stats['documents']} pages."
+                        f"Done! Indexed {stats['total_chunks']} chunks "
+                        f"from {stats['total_documents']} pages."
                     ),
-                    "progress": stats["documents"],
-                    "total": stats["documents"],
+                    "progress": stats["total_documents"],
+                    "total": stats["total_documents"],
                 })
 
         except Exception as exc:
