@@ -26,6 +26,7 @@ const chatInput = $("#chatInput");
 const sendBtn = $("#sendBtn");
 
 let pollTimer = null;
+let chatHistory = [];  // tracks {role, content} turns for multi-turn conversation
 
 // =========================================================
 // Scraping
@@ -41,6 +42,7 @@ scrapeBtn.addEventListener("click", async () => {
     progressArea.hidden = false;
     progressFill.style.width = "0%";
     progressMsg.textContent = "Starting…";
+    chatHistory = [];  // reset conversation history for new website
 
     try {
         const res = await fetch("/api/scrape", {
@@ -146,7 +148,7 @@ chatForm.addEventListener("submit", async (e) => {
         const res = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ question }),
+            body: JSON.stringify({ question, history: chatHistory }),
         });
         const data = await res.json();
         typing.remove();
@@ -154,6 +156,9 @@ chatForm.addEventListener("submit", async (e) => {
         if (data.error) {
             appendMessage("bot", `Error: ${data.error}`);
         } else {
+            // Record turn in chat history
+            chatHistory.push({ role: "user", content: question });
+            chatHistory.push({ role: "assistant", content: data.answer });
             appendMessage("bot", data.answer, data.sources);
         }
     } catch (err) {

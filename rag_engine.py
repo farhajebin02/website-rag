@@ -251,12 +251,14 @@ class RAGEngine:
         return results
 
     # ------------------------------------------------------------------
-    # Generation (Gemini)
+    # Generation (Groq)
     # ------------------------------------------------------------------
 
-    def query(self, question: str, top_k: int = 5) -> QueryResult:
+    def query(self, question: str, top_k: int = 5, chat_history: list | None = None) -> QueryResult:
         """
-        Full RAG pipeline: retrieve context → generate answer with Gemini.
+        Full RAG pipeline: retrieve context → generate answer with Groq.
+        Accepts optional chat_history (list of {"role", "content"} dicts)
+        for multi-turn conversations.
         """
         self._load_groq()
 
@@ -282,21 +284,37 @@ class RAGEngine:
 
         context = "\n\n---\n\n".join(context_parts)
 
-        prompt = (
-            "You are a helpful assistant that answers questions based ONLY on the "
-            "provided context. If the context does not contain enough information, "
-            "say so clearly. Cite sources using [Source N] notation.\n\n"
-            f"### Context\n\n{context}\n\n"
-            f"### Question\n\n{question}\n\n"
-            "### Answer\n"
-        )
-
         # Call Groq
         if self._groq_client:
             try:
+                # Build messages: system → history → current question
+                system_msg = {
+                    "role": "system",
+                    "content": (
+                        "You are a helpful assistant that answers questions based ONLY on the "
+                        "provided context. If the context does not contain enough information, "
+                        "say so clearly. Cite sources using [Source N] notation."
+                    ),
+                }
+
+                user_msg = {
+                    "role": "user",
+                    "content": f"### Context\n\n{context}\n\n### Question\n\n{question}",
+                }
+
+                messages = [system_msg]
+                # Append previous conversation turns
+                if chat_history:
+                    for turn in chat_history[-10:]:  # keep last 10 turns to stay within token limits
+                        messages.append({
+                            "role": turn.get("role", "user"),
+                            "content": turn.get("content", ""),
+                        })
+                messages.append(user_msg)
+
                 response = self._groq_client.chat.completions.create(
                     model=self.GROQ_MODEL_NAME,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=messages,
                     temperature=0.3,
                     max_tokens=1024,
                 )

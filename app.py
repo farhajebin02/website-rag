@@ -152,7 +152,8 @@ def api_chat():
     if not question:
         return jsonify({"error": "Question is required."}), 400
 
-    result = rag_engine.query(question)
+    history = data.get("history", [])
+    result = rag_engine.query(question, chat_history=history)
     return jsonify({
         "answer": result.answer,
         "sources": result.sources,
