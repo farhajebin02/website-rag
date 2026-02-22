@@ -110,13 +110,15 @@ def api_scrape():
 
             stats = rag_engine.ingest_documents(doc_dicts)
 
+            skipped = stats.get("skipped_documents", 0)
+            skip_msg = f" ({skipped} unchanged, skipped)" if skipped else ""
             with status_lock:
                 scrape_status.update({
                     "active": False,
                     "done": True,
                     "message": (
                         f"Done! Indexed {stats['total_chunks']} chunks "
-                        f"from {stats['total_documents']} pages."
+                        f"from {stats['total_documents']} pages{skip_msg}."
                     ),
                     "progress": stats["total_documents"],
                     "total": stats["total_documents"],

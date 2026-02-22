@@ -2,6 +2,7 @@
 RAG Engine — Text chunking, FAISS vector indexing, and Groq-powered QA.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -139,6 +140,10 @@ class RAGEngine:
         self.index: Optional[faiss.Index] = None
         self.chunks: List[Chunk] = []
 
+        # Incremental indexing — hash cache & embedding cache
+        self._page_hashes: dict[str, str] = {}       # {url: sha256_hex}
+        self._page_embeddings: dict[str, tuple[list[Chunk], np.ndarray]] = {}  # {url: (chunks, embeddings)}
+
         # Groq
         self._groq_key = groq_api_key or os.getenv("GROQ_API_KEY", "")
         self._groq_client = None
@@ -184,49 +189,114 @@ class RAGEngine:
     # Ingestion
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _content_hash(text: str) -> str:
+        """Return the SHA-256 hex digest of *text*."""
+        return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
     def ingest_documents(self, documents: list[dict]) -> dict:
         """
         Process a list of documents (dicts with url, title, content) into
         the FAISS index.
 
+        Uses **smart incremental indexing**: pages whose content has not
+        changed since the last ingest are skipped — their cached chunks
+        and embeddings are reused directly.
+
         Returns
         -------
-        dict with ingestion stats.
+        dict with ingestion stats (includes ``skipped_documents``).
         """
         self._load_embed_model()
 
-        all_chunks: list[Chunk] = []
+        new_or_changed_docs: list[dict] = []
+        skipped = 0
+
         for doc in documents:
-            text = doc.get("content", "")
             url = doc.get("url", "")
-            title = doc.get("title", "")
-            parts = self.splitter.split(text)
-            for i, part in enumerate(parts):
-                all_chunks.append(
-                    Chunk(text=part, source_url=url, source_title=title, chunk_index=i)
-                )
+            content = doc.get("content", "")
+            page_hash = self._content_hash(content)
+
+            if url in self._page_hashes and self._page_hashes[url] == page_hash:
+                # Content unchanged — skip re-embedding
+                skipped += 1
+                logger.debug("Skipping unchanged page: %s", url)
+                continue
+
+            new_or_changed_docs.append(doc)
+            self._page_hashes[url] = page_hash
+
+        if skipped:
+            logger.info(
+                "Incremental indexing: %d page(s) unchanged — skipped.",
+                skipped,
+            )
+
+        # ---- Chunk & embed only the NEW / CHANGED documents ----
+        if new_or_changed_docs:
+            new_chunks: list[Chunk] = []
+            for doc in new_or_changed_docs:
+                text = doc.get("content", "")
+                url = doc.get("url", "")
+                title = doc.get("title", "")
+                parts = self.splitter.split(text)
+                for i, part in enumerate(parts):
+                    new_chunks.append(
+                        Chunk(text=part, source_url=url, source_title=title, chunk_index=i)
+                    )
+
+            texts = [c.text for c in new_chunks]
+            logger.info("Encoding %d new chunks …", len(texts))
+            new_embeddings = self._embed_model.encode(
+                texts, show_progress_bar=False, normalize_embeddings=True, batch_size=64,
+            )
+            new_embeddings = np.array(new_embeddings, dtype="float32")
+
+            # Cache embeddings per URL
+            for doc in new_or_changed_docs:
+                url = doc.get("url", "")
+                url_chunks = [c for c in new_chunks if c.source_url == url]
+                url_indices = [i for i, c in enumerate(new_chunks) if c.source_url == url]
+                if url_indices:
+                    self._page_embeddings[url] = (
+                        url_chunks,
+                        new_embeddings[url_indices],
+                    )
+        elif not self._page_embeddings:
+            # Nothing new and no cache — nothing to index
+            return {"total_chunks": 0, "total_documents": 0, "skipped_documents": 0}
+
+        # ---- Rebuild FAISS index from ALL cached embeddings ----
+        # Keep only pages that are present in the current scrape set
+        current_urls = {doc.get("url", "") for doc in documents}
+        # Prune stale URLs from caches
+        stale = set(self._page_hashes.keys()) - current_urls
+        for url in stale:
+            self._page_hashes.pop(url, None)
+            self._page_embeddings.pop(url, None)
+
+        all_chunks: list[Chunk] = []
+        all_embeddings: list[np.ndarray] = []
+        for url in current_urls:
+            if url in self._page_embeddings:
+                chunks, embs = self._page_embeddings[url]
+                all_chunks.extend(chunks)
+                all_embeddings.append(embs)
 
         if not all_chunks:
-            return {"chunks": 0, "documents": 0}
+            return {"total_chunks": 0, "total_documents": 0, "skipped_documents": skipped}
 
-        # Encode
-        texts = [c.text for c in all_chunks]
-        logger.info("Encoding %d chunks …", len(texts))
-        embeddings = self._embed_model.encode(
-            texts, show_progress_bar=False, normalize_embeddings=True, batch_size=64,
-        )
-        embeddings = np.array(embeddings, dtype="float32")
-
-        # Build FAISS index (inner-product on normalised vectors = cosine sim)
+        combined = np.vstack(all_embeddings).astype("float32")
         self.index = faiss.IndexFlatIP(self._embed_dim)
-        self.index.add(embeddings)
+        self.index.add(combined)
         self.chunks = all_chunks
         self._ready = True
 
         stats = self.stats
+        stats["skipped_documents"] = skipped
         logger.info(
-            "Index built — %d chunks from %d documents.",
-            stats["total_chunks"], stats["total_documents"],
+            "Index built — %d chunks from %d documents (%d skipped).",
+            stats["total_chunks"], stats["total_documents"], skipped,
         )
         return stats
 
