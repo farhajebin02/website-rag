@@ -12,6 +12,7 @@ WebRAG crawls a website recursively, builds a vector index from the scraped cont
 - **LLM-Powered Answers** — Groq API (Llama 3.3 70B) generates answers grounded in retrieved context
 - **Source Citations** — Every answer includes `[Source N]` references back to the original pages
 - **Conversation History** — Multi-turn chat with follow-up question support (last 10 turns)
+- **Smart Incremental Indexing** — Skips re-embedding unchanged pages using SHA-256 content hashing
 - **Live Progress** — Real-time scraping progress bar with page count updates
 - **Modern UI** — Glassmorphism design with Inter font, dark theme, and smooth animations
 
